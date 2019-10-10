@@ -52,8 +52,7 @@ void file_open_file(char *pathname) {
  * Returns last offset of the extended file if success.
  * If fail, return -1.
  */
-off_t file_extend_file()
-{
+off_t file_extend_file() {
     off_t result;
     pagenum_t num_of_pages;
     char buf = 0;
@@ -113,8 +112,7 @@ pagenum_t file_alloc_page() {
 /* Free an on-disk page to the free page list.
  * Freed page is inserted to front of free page list.
  */
-void file_free_page(pagenum_t pagenum)
-{
+void file_free_page(pagenum_t pagenum) {
     page_t tmp_page; // used for header page and freed page
     pagenum_t next_free_page;
 
@@ -135,8 +133,7 @@ void file_free_page(pagenum_t pagenum)
 /* Read an on-disk page into the in-memory page structure(dest)
  * In given dest, style member variable must be set to correct value.
  */
-void file_read_page(pagenum_t pagenum, page_t* dest)
-{
+void file_read_page(pagenum_t pagenum, page_t* dest) {
     uint64_t read_size[5] = {HEADER_PAGE_SIZE,
                              FREE_PAGE_SIZE,
                              ON_DISK_PAGE_SIZE,
@@ -151,8 +148,7 @@ void file_read_page(pagenum_t pagenum, page_t* dest)
 /* Write an in-memory page(src) to the on-disk page
  * In given src, style member variable must be set to correct value.
  */
-void file_write_page(pagenum_t pagenum, const page_t* src)
-{
+void file_write_page(pagenum_t pagenum, const page_t* src) {
     uint64_t write_size[5] = {HEADER_PAGE_SIZE,
                               FREE_PAGE_SIZE,
                               ON_DISK_PAGE_SIZE,
@@ -167,8 +163,7 @@ void file_write_page(pagenum_t pagenum, const page_t* src)
  * Reset global variable fd to -1.
  * Return zero if success, otherwise -1.
  */
-int file_close_file(void)
-{
+int file_close_file(void) {
     int result = close(fd);
 
     if(result == 0) {

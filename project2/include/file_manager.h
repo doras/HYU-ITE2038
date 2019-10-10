@@ -87,7 +87,7 @@ typedef struct {
             char _reserved[104];
             pagenum_t right_sibling_pagenum;
             record records[31];
-        } leaf_node;
+        } leaf_page;
     };
 
     // Additional area only in in-memory structure
