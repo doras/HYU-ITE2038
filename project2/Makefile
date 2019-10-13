@@ -13,6 +13,9 @@ LIBS=lib/
 TARGET_SRC:=$(SRCDIR)main.c
 TARGET_OBJ:=$(SRCDIR)main.o
 
+# Sample output file
+SAMPLE_DATA:=datafile
+
 # Include more files if you write another source file.
 # SRCS_FOR_LIB:=$(SRCDIR)bpt.c $(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c
 SRCS_FOR_LIB:=$(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c
@@ -30,7 +33,7 @@ $(TARGET): $(TARGET_OBJ)
 	$(CC) $(CFLAGS) -o $@ $^ -L $(LIBS) -lbpt
 
 clean:
-	rm $(TARGET) $(TARGET_OBJ) $(OBJS_FOR_LIB) $(LIBS)*
+	rm $(TARGET) $(TARGET_OBJ) $(OBJS_FOR_LIB) $(LIBS)* $(SAMPLE_DATA)
 
 library:
 	gcc -shared -Wl,-soname,libbpt.so -o $(LIBS)libbpt.so $(OBJS_FOR_LIB)
