@@ -1,4 +1,42 @@
+/*
+ * disk_based_bpt.c
+ */
+
+/*
+ *  bpt:  B+ Tree Implementation
+ *  Copyright (C) 2010-2016  Amittai Aviram  http://www.amittai.com
+ *  All rights reserved.
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice, 
+ *  this list of conditions and the following disclaimer.
+ *
+ *  2. Redistributions in binary form must reproduce the above copyright notice, 
+ *  this list of conditions and the following disclaimer in the documentation 
+ *  and/or other materials provided with the distribution.
+ 
+ *  3. Neither the name of the copyright holder nor the names of its 
+ *  contributors may be used to endorse or promote products derived from this 
+ *  software without specific prior written permission.
+ 
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
+ *  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE 
+ *  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ *  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
+ *  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
+ *  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
+ *  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
+ *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
+ *  POSSIBILITY OF SUCH DAMAGE.
+ */
+
+
 #include "disk_based_bpt.h"
+
+#define DEBUG(x) printf("line: %d, code: %d\n", __LINE__, x);
 
 // CONSTANTS.
 
@@ -15,11 +53,138 @@ const int ORDER_OF_INTERNAL = 249;
 
 char* g_path_names[5];
 
+queue_node_t *g_queue = NULL;
+
 
 // FUNCTIONS.
 
 // Internal functions
 // Reference to bpt.c
+
+// print.
+
+void _enqueue(pagenum_t val) {
+    queue_node_t *curr = g_queue;
+    queue_node_t *ptr = malloc(sizeof(queue_node_t));
+    ptr->value = val;
+    ptr->next = NULL;
+    while (curr && curr->next) {
+        curr = curr->next;
+    }
+
+    if (curr == NULL) {
+        g_queue = ptr;
+    } else {
+        curr->next = ptr;
+    }
+}
+
+pagenum_t _dequeue() {
+    pagenum_t ret_val;
+    queue_node_t *temp = g_queue;
+
+    if (temp == NULL) {
+        return 0;
+    }
+    ret_val = temp->value;
+    g_queue = temp->next;
+    free(temp);
+    return ret_val;
+}
+
+void _print_tree() {
+    page_t temp_page;
+    pagenum_t temp;
+    int i;
+
+    temp_page.style = PAGE_HEADER;
+    file_read_page(0, &temp_page);
+    temp = temp_page.header_page.root_pagenum;
+
+    if (temp == 0) {
+        printf("Empty tree.\n");
+        return;
+    }
+
+    _enqueue(temp);
+    _enqueue(0);
+    temp_page.style = PAGE_INTERNAL;
+    while (g_queue != NULL) {
+        temp = _dequeue();
+        if (temp == 0) {
+            printf("\n");
+            if (g_queue == NULL) break;
+            _enqueue(0);
+            continue;
+        }
+        file_read_page(temp, &temp_page);
+        printf("(%llu) ", temp);
+        
+        if (!temp_page.internal_page.is_leaf) {
+            _enqueue(temp_page.internal_page.first_pagenum);
+            for (i = 0; i < temp_page.internal_page.num_of_keys; ++i) {
+                printf("%lld ", temp_page.internal_page.entries[i].key);
+                _enqueue(temp_page.internal_page.entries[i].pagenum);
+            }
+            printf("|");
+        } else {
+            for (i = 0; i < temp_page.leaf_page.num_of_keys; ++i) {
+                printf("%lld {%s} ", temp_page.leaf_page.records[i].key, temp_page.leaf_page.records[i].value);
+            }
+            printf("|");
+        }
+    }
+
+    printf("\n");
+}
+
+void _print_keys() {
+    page_t temp_page;
+    pagenum_t temp;
+    int i;
+
+    temp_page.style = PAGE_HEADER;
+    file_read_page(0, &temp_page);
+    temp = temp_page.header_page.root_pagenum;
+
+    if (temp == 0) {
+        printf("Empty tree.\n");
+        return;
+    }
+
+    _enqueue(temp);
+    _enqueue(0);
+    temp_page.style = PAGE_INTERNAL;
+    while (g_queue != NULL) {
+        temp = _dequeue();
+        if (temp == 0) {
+            printf("\n");
+            if (g_queue == NULL) break;
+            _enqueue(0);
+            continue;
+        }
+        file_read_page(temp, &temp_page);
+        
+        if (!temp_page.internal_page.is_leaf) {
+            _enqueue(temp_page.internal_page.first_pagenum);
+            for (i = 0; i < temp_page.internal_page.num_of_keys; ++i) {
+                printf("%lld ", temp_page.internal_page.entries[i].key);
+                _enqueue(temp_page.internal_page.entries[i].pagenum);
+            }
+            printf("|");
+        } else {
+            for (i = 0; i < temp_page.leaf_page.num_of_keys; ++i) {
+                printf("%lld ", temp_page.leaf_page.records[i].key);
+            }
+            printf("|");
+        }
+    }
+
+    printf("\n");
+}
+
+
+// find.
 
 /* Traces the path from the root to a leaf, searching
  * by key.  Displays information about the path
@@ -67,6 +232,8 @@ pagenum_t _find_leaf(pagenum_t root, int64_t key, int debug) {
     }
     return root;
 }
+
+// insertion.
 
 /* Finds the appropriate place to
  * split a node that is too big into two.
@@ -150,8 +317,7 @@ pagenum_t _insert_into_new_root(pagenum_t left, int64_t key, pagenum_t right) {
  * into a node into which these can fit
  * without violating the B+ tree properties.
  */
-void _insert_into_node(pagenum_t node, 
-        int left_index, int64_t key, pagenum_t right) {
+void _insert_into_node(pagenum_t node, int left_index, int64_t key, pagenum_t right) {
 
     int i;
     page_t node_page;
@@ -410,6 +576,432 @@ pagenum_t _insert_into_leaf_after_split(pagenum_t root, pagenum_t leaf, int64_t 
     return _insert_into_parent(root, leaf, new_key, new_leaf);
 }
 
+// deletion.
+
+/* Check whether the root is empty or not.
+ * And if it is empty, adjust root.
+ * Then free old root page.
+ */
+void _adjust_root(pagenum_t root) {
+    pagenum_t new_root;
+    page_t root_page;
+
+    root_page.style = PAGE_INTERNAL;
+    file_read_page(root, &root_page);
+
+    /* Case: nonempty root. */
+    if (root_page.internal_page.num_of_keys > 0)
+        return;
+    
+    /* Case: empty root. */
+
+    // If it has a child, promote
+    // the first (only) child as the new root.
+    if (!root_page.internal_page.is_leaf) {
+        new_root = root_page.internal_page.first_pagenum;
+
+        // For minimizing FILE I/O, read only first 8-byte
+        root_page.style = PAGE_FREE;
+        file_read_page(new_root, &root_page);
+        root_page.internal_page.parent_pagenum = 0;
+        file_write_page(new_root, &root_page);
+    }
+
+    // If it is a leaf (has no child),
+    // then the whole tree is empty.
+
+    else {
+        new_root = 0;
+    }
+
+    root_page.style = PAGE_HEADER;
+    file_read_page(0, &root_page);
+    root_page.header_page.root_pagenum = new_root;
+    file_write_page(0, &root_page);
+
+    file_free_page(root);
+}
+
+/* Utility function for deletion. Retrieves
+ * the index of a node's nearest neighbor (sibling)
+ * to the left if one exists.  If not (the node
+ * is the leftmost child), returns -1 to signify
+ * this special case.
+ */
+int _get_neighbor_index(pagenum_t parent, pagenum_t node) {
+    int i;
+    page_t temp_page;
+        
+    temp_page.style = PAGE_INTERNAL;
+    file_read_page(parent, &temp_page);
+    /* Return the index of the neighbor node to the left
+     * of the pagenum in the parent pointing to
+     * given node.
+     * If given node is the leftmost child,
+     * this means return -1.
+     */
+    for (i = 0; i <= temp_page.internal_page.num_of_keys; ++i) {
+        if (*(&temp_page.internal_page.first_pagenum + 2 * i) == node) {
+            return i - 1;
+        }
+    }
+
+    perror("Search for nonexistent pointer to node in parent.");
+    exit(EXIT_FAILURE);
+}
+
+/* Remove given pointer from the given node.
+ * Interanl page version of remove_entry_from_node in bpt.c
+ * Return number of keys of given leaf page.
+ */
+int _remove_entry_from_internal_node(pagenum_t node, int64_t key, pagenum_t pointer) {
+    
+    int i;
+    page_t internal_page;
+
+    internal_page.style = PAGE_INTERNAL;
+    file_read_page(node, &internal_page);
+
+    // Remove the key and shift other keys accordingly.
+    i = 0;
+    while (internal_page.internal_page.entries[i].key != key) {
+        ++i;
+    }
+    for (++i; i < internal_page.internal_page.num_of_keys; ++i) {
+        internal_page.internal_page.entries[i - 1].key = internal_page.internal_page.entries[i].key;
+    }
+
+    // Remove the child pagenum and shift other values accordingly.
+    i = 0;
+    while (*(&internal_page.internal_page.first_pagenum + 2 * i) != pointer) {
+        ++i;
+    }
+    for (++i; i < internal_page.internal_page.num_of_keys + 1; ++i) {
+        *(&internal_page.internal_page.first_pagenum + 2 * (i - 1)) = *(&internal_page.internal_page.first_pagenum + 2 * i);
+    }
+
+    // Decrease number of keys
+    --internal_page.internal_page.num_of_keys;
+
+    file_write_page(node, &internal_page);
+
+    return internal_page.internal_page.num_of_keys;
+}
+
+/* Remove given record from the given leaf.
+ * Leaf page version of remove_entry_from_node in bpt.c
+ * Return number of keys of given leaf page.
+ */
+int _remove_record_from_leaf(pagenum_t leaf, int64_t key, char *value) {
+    
+    int i;
+    page_t leaf_page;
+
+    leaf_page.style = PAGE_LEAF;
+    file_read_page(leaf, &leaf_page);
+
+    // Remove the key and shift other keys accordingly.
+    i = 0;
+    while (leaf_page.leaf_page.records[i].key != key) {
+        ++i;
+    }
+    for (++i; i < leaf_page.leaf_page.num_of_keys; ++i) {
+        leaf_page.leaf_page.records[i - 1].key = leaf_page.leaf_page.records[i].key;
+    }
+
+    // Remove the value and shift other values accordingly.
+    i = 0;
+    while (strcmp(leaf_page.leaf_page.records[i].value, value) != 0) {
+        ++i;
+    }
+    for (++i; i < leaf_page.leaf_page.num_of_keys; ++i) {
+        strcpy(leaf_page.leaf_page.records[i - 1].value, leaf_page.leaf_page.records[i].value);
+    }
+
+    // Decrease number of keys
+    --leaf_page.leaf_page.num_of_keys;
+
+    file_write_page(leaf, &leaf_page);
+
+    return leaf_page.leaf_page.num_of_keys;
+}
+
+/* Perform delayed merge with a node that has become
+ * empty after deletion
+ * and a neighboring node.
+ */
+void _delayed_merge_nodes(pagenum_t root, pagenum_t node, pagenum_t parent
+        , pagenum_t neighbor, int neighbor_index, int64_t k_prime) {
+    
+    page_t temp_page;
+    pagenum_t last_pagenum;
+    int is_leaf, i;
+
+    /* Read is_leaf and right_sibling_pagenum(in leaf)
+     * or first_child_pagenum(in internal) from given node.
+     */
+    temp_page.style = PAGE_INTERNAL;
+    file_read_page(node, &temp_page);
+    is_leaf = temp_page.internal_page.is_leaf;
+    last_pagenum = temp_page.leaf_page.right_sibling_pagenum;
+
+    // Read neighbor page to temp_page    
+    file_read_page(neighbor, &temp_page);
+
+    /* Case: leaf node.
+     * If given node is not leftmost child,
+     * change neighbor's right sibling node to
+     * given node's right sibling node.
+     */
+    if (is_leaf && neighbor_index != -1) {
+        temp_page.leaf_page.right_sibling_pagenum = last_pagenum;
+        file_write_page(neighbor, &temp_page);
+    } // Otherwise in leaf node, do nothing
+
+    /* Case: non-leaf node. */
+    else if (!is_leaf) {
+        /* If given node has neighbor to left,
+         * append k_prime and given node's only child to neighbor.
+         */
+        if (neighbor_index != -1) {
+            // temp_page is neighbor node
+            temp_page.internal_page.entries[temp_page.internal_page.num_of_keys].key = k_prime;
+            temp_page.internal_page.entries[temp_page.internal_page.num_of_keys].pagenum = last_pagenum;
+            ++temp_page.internal_page.num_of_keys;
+        } 
+        // If given node is leftmost child.
+        else {
+            /* Insert k_prime and given node's only child to
+             * left of neighbor node.
+             */
+            for (i = temp_page.internal_page.num_of_keys; i > 0; --i) {
+                temp_page.internal_page.entries[i].key = temp_page.internal_page.entries[i - 1].key;
+                temp_page.internal_page.entries[i].pagenum = temp_page.internal_page.entries[i - 1].pagenum;
+            }
+            temp_page.internal_page.entries[0].pagenum = temp_page.internal_page.first_pagenum;
+
+            temp_page.internal_page.entries[0].key = k_prime;
+            temp_page.internal_page.first_pagenum = last_pagenum;
+            ++temp_page.internal_page.num_of_keys;
+        }
+
+        file_write_page(neighbor, &temp_page);
+
+        // For writing only first 8-byte.
+        temp_page.style = PAGE_FREE;
+        temp_page.internal_page.parent_pagenum = neighbor;
+        file_write_page(last_pagenum, &temp_page);
+    }
+
+    file_free_page(node);
+    _delete_internal_entry(root, parent, k_prime, node);
+}
+
+/* Deletes an record from the B+ tree.
+ * Removes the record from the leaf, and then
+ * makes all appropriate changes to preserve
+ * the B+ tree properties.
+ */
+void _delete_record(pagenum_t root, pagenum_t leaf, int64_t key, char *value) {
+    
+    int leaf_num_keys, neighbor_index, k_prime_index;
+    pagenum_t neighbor, parent;
+    page_t temp_page;
+    int64_t k_prime;
+
+    // Remove record from leaf.
+    leaf_num_keys = _remove_record_from_leaf(leaf, key, value);
+
+    /* Case: deletion was performed in the root. */
+    if (leaf == root) {
+        _adjust_root(root);
+        return;
+    }
+
+    /* Case: leaf page still has some records.
+     * (The simple case.)
+     */
+    if (leaf_num_keys > 0) {
+        return;
+    }
+
+    /* Case: leaf page has no record any more.
+     * Merge is needed.
+     */
+
+    /* Find the appropriate neighbor node with which
+     * to merge.
+     * Also find the key (k_prime) in the parent
+     * between the leaf and the neighbor leaf.
+     */
+
+    temp_page.style = PAGE_FREE;
+    file_read_page(leaf, &temp_page);
+    parent = temp_page.leaf_page.parent_pagenum;
+
+    neighbor_index = _get_neighbor_index(parent, leaf);
+    k_prime_index = neighbor_index == -1 ? 0 : neighbor_index;
+
+    temp_page.style = PAGE_INTERNAL;
+    file_read_page(parent, &temp_page);
+    neighbor = *(&temp_page.internal_page.first_pagenum + (neighbor_index == -1 ? 2 * 1 : 2 * neighbor_index));
+    k_prime = temp_page.internal_page.entries[k_prime_index].key;
+
+
+    _delayed_merge_nodes(root, leaf, parent, neighbor, neighbor_index, k_prime);
+}
+
+/* Redistributes entries between two internal nodes
+ * when one has become empty after deletion
+ * but its neighbor is too big to append
+ * one more entry without exceeding the
+ * maximum
+ */
+void _redistribute_nodes(pagenum_t node, pagenum_t parent
+        , pagenum_t neighbor, int neighbor_index, int64_t k_prime, int k_prime_index) {  
+    
+    page_t temp_page;
+    pagenum_t temp_pagenum;
+    int64_t temp_key;
+    int i;
+
+    /* Case: node has a neighbor to the left.
+     * Pull the neighbor's last key-pagenum pair over
+     * from the neighbor's right end to node's left end.
+     */
+    if (neighbor_index != -1) {
+        temp_page.style = PAGE_INTERNAL;
+        file_read_page(neighbor, &temp_page);
+
+        temp_key = temp_page.internal_page.entries[ORDER_OF_INTERNAL - 2].key;
+        temp_pagenum = temp_page.internal_page.entries[ORDER_OF_INTERNAL - 2].pagenum;
+        --temp_page.internal_page.num_of_keys;
+
+        // For writing only first 24-byte.
+        temp_page.style = PAGE_HEADER;
+        file_write_page(neighbor, &temp_page);
+
+        temp_page.style = PAGE_INTERNAL;
+        file_read_page(parent, &temp_page);
+        temp_page.internal_page.entries[k_prime_index].key = temp_key;
+        file_write_page(parent, &temp_page);
+
+        file_read_page(node, &temp_page);
+        temp_page.internal_page.entries[0].key = k_prime;
+        temp_page.internal_page.entries[0].pagenum = temp_page.internal_page.first_pagenum;
+        temp_page.internal_page.first_pagenum = temp_pagenum;
+        ++temp_page.internal_page.num_of_keys;
+        file_write_page(node, &temp_page);
+
+        // Write only parent pagenum at first 8-byte.
+        temp_page.style = PAGE_FREE;
+        temp_page.internal_page.parent_pagenum = node;
+        file_write_page(temp_pagenum, &temp_page);
+    }
+
+    /* Case: node is the leftmost child.
+     * Take a key-pagenum pair from the neighbor to the right.
+     * Move the neighbor's leftmost key-pagenum pair
+     * to node's rightmost position.
+     */
+    else {
+        temp_page.style = PAGE_INTERNAL;
+        file_read_page(neighbor, &temp_page);
+
+        temp_key = temp_page.internal_page.entries[0].key;
+        temp_pagenum = temp_page.internal_page.first_pagenum;
+        temp_page.internal_page.first_pagenum = temp_page.internal_page.entries[0].pagenum;
+
+        for (i = 0; i < temp_page.internal_page.num_of_keys - 1; ++i) {
+            temp_page.internal_page.entries[i].key = temp_page.internal_page.entries[i + 1].key;
+            temp_page.internal_page.entries[i].pagenum = temp_page.internal_page.entries[i + 1].pagenum;
+        }
+        --temp_page.internal_page.num_of_keys;
+        file_write_page(neighbor, &temp_page);
+
+        file_read_page(parent, &temp_page);
+        temp_page.internal_page.entries[k_prime_index].key = temp_key;
+        file_write_page(parent, &temp_page);
+
+        file_read_page(node, &temp_page);
+        temp_page.internal_page.entries[0].key = k_prime;
+        temp_page.internal_page.entries[0].pagenum = temp_pagenum;
+        ++temp_page.internal_page.num_of_keys;
+        file_write_page(node, &temp_page);
+
+        // Write only parent pagenum at first 8-byte.
+        temp_page.style = PAGE_FREE;
+        temp_page.internal_page.parent_pagenum = node;
+        file_write_page(temp_pagenum, &temp_page);
+    }
+}
+
+/* Deletes an entry from the B+ tree.
+ * Removes the entry from the internal node, and then
+ * makes all appropriate changes to preserve
+ * the B+ tree properties.
+ */
+void _delete_internal_entry(pagenum_t root, pagenum_t node, int64_t key, pagenum_t pointer) {
+    
+    int node_num_keys, neighbor_index, k_prime_index;
+    pagenum_t neighbor, parent;
+    page_t temp_page;
+    int64_t k_prime;
+
+    // Remove key and pagenum from internal node.
+    node_num_keys = _remove_entry_from_internal_node(node, key, pointer);
+
+    /* Case: deletion was performed in the root. */
+    if (node == root) {
+        _adjust_root(root);
+        return;
+    }
+
+    /* Case: internal page still has some keys.
+     * (The simple case.)
+     */
+    if (node_num_keys > 0) {
+        return;
+    }
+
+    /* Case: internal page has no key any more.
+     * Either merge or redistribution is needed.
+     */
+
+    /* Find the appropriate neighbor node with which
+     * to merge or redistribute.
+     * Also find the key (k_prime) in the parent
+     * between the pagenum to given node and 
+     * the pagenum to the neighbor node.
+     */
+
+    // For reading only first 8-byte.
+    temp_page.style = PAGE_FREE;
+    file_read_page(node, &temp_page);
+    parent = temp_page.internal_page.parent_pagenum;
+    
+    neighbor_index = _get_neighbor_index(parent, node);
+    k_prime_index = neighbor_index == -1 ? 0 : neighbor_index;
+
+    temp_page.style = PAGE_INTERNAL;
+    file_read_page(parent, &temp_page);
+    neighbor = *(&temp_page.internal_page.first_pagenum + (neighbor_index == -1 ? 2 * 1 : 2 * neighbor_index));
+    k_prime = temp_page.internal_page.entries[k_prime_index].key;
+
+
+    // For reading only first 24-byte.
+    temp_page.style = PAGE_HEADER;
+    file_read_page(neighbor, &temp_page);
+
+    /* Delayed merge. */
+    if (temp_page.internal_page.num_of_keys < ORDER_OF_INTERNAL - 1)
+        _delayed_merge_nodes(root, node, parent, neighbor, neighbor_index, k_prime);
+    /* Redistribution. */
+    else
+        _redistribute_nodes(node, parent, neighbor, neighbor_index, k_prime, k_prime_index);
+}
+
+
 
 // Functions of own disk-based bpt
 
@@ -539,7 +1131,26 @@ int db_find(int64_t key, char * ret_val) {
 /* Find the matching record and delete it if found.
  * If success, return 0. Otherwise, return non-zero value.
  */
-int db_delete(int64_t key);
+int db_delete(int64_t key) {
+    page_t temp_page;
+    pagenum_t root, new_root;
+    char value[120];
+
+    temp_page.style = PAGE_HEADER;
+    file_read_page(0, &temp_page);
+    root = temp_page.header_page.root_pagenum;
+
+    /* If there isn't given key in tree,
+     * deletion fails and return non-zero value
+     */
+    if (db_find(key, value) != 0) {
+        return 1;
+    }
+
+    _delete_record(root, _find_leaf(root, key, 0), key, value);
+
+    return 0;
+}
 
 
 /* Close the opened data file.
