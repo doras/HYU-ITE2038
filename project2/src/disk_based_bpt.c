@@ -51,7 +51,7 @@ const int ORDER_OF_INTERNAL = 249;
 
 char* g_path_names[5];
 
-queue_node_t *g_queue = NULL;
+_queue_node_t *g_queue = NULL;
 
 
 // FUNCTIONS.
@@ -62,8 +62,8 @@ queue_node_t *g_queue = NULL;
 // print.
 
 void _enqueue(pagenum_t val) {
-    queue_node_t *curr = g_queue;
-    queue_node_t *ptr = malloc(sizeof(queue_node_t));
+    _queue_node_t *curr = g_queue;
+    _queue_node_t *ptr = malloc(sizeof(_queue_node_t));
     ptr->value = val;
     ptr->next = NULL;
     while (curr && curr->next) {
@@ -79,7 +79,7 @@ void _enqueue(pagenum_t val) {
 
 pagenum_t _dequeue() {
     pagenum_t ret_val;
-    queue_node_t *temp = g_queue;
+    _queue_node_t *temp = g_queue;
 
     if (temp == NULL) {
         return 0;

@@ -12,7 +12,7 @@
 typedef struct _queue_node {
     pagenum_t value;
     struct _queue_node *next;
-} queue_node_t;
+} _queue_node_t;
 
 // CONSTANTS.
 
@@ -31,7 +31,7 @@ extern const int ORDER_OF_INTERNAL;
 // For table id
 extern char* g_path_names[5]; // TODO: implement detail of table id
 
-extern queue_node_t *g_queue;
+extern _queue_node_t *g_queue;
 
 // FUNCTIONS.
 
