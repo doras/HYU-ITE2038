@@ -36,8 +36,6 @@
 
 #include "disk_based_bpt.h"
 
-#define DEBUG(x) printf("line: %d, code: %d\n", __LINE__, x);
-
 // CONSTANTS.
 
 /* Order of leaf page.
