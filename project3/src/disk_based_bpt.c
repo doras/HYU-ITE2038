@@ -51,7 +51,7 @@ const int ORDER_OF_INTERNAL = 249;
 
 // Declaration.
 
-static pagenum_t _find_leaf(pagenum_t root, int64_t key, int debug);
+static pagenum_t _find_leaf(pagenum_t root, int64_t key);
 static int _cut(int length);
 static int _get_left_index(pagenum_t parent, pagenum_t left);
 static pagenum_t _start_new_tree(int64_t key, char * value);
@@ -1034,10 +1034,12 @@ int db_delete(int64_t key) {
 }
 
 
-/**
-//  * Close the opened data file.
-//  * If success, return 0. Otherwise, return -1.
+/** 
+ * Write all pages of this table from buffer to disk
+ *      and discard the table id.
+ * \param table_id Indicating target table to be closed.
+ * \return If success, return 0. Otherwise, return non-zero value.
  */
 int close_table(int table_id) {
-    return file_close_file();
+    return buf_close_table(table_id);
 }
