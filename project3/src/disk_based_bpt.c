@@ -47,175 +47,36 @@ const int ORDER_OF_LEAF = 32;
 const int ORDER_OF_INTERNAL = 249;
 
 
-// GLOBALS.
-
-char* g_path_names[5];
-
-_queue_node_t *g_queue = NULL;
-
-
 // FUNCTIONS.
+
+// Declaration.
+
+static pagenum_t _find_leaf(pagenum_t root, int64_t key, int debug);
+static int _cut(int length);
+static int _get_left_index(pagenum_t parent, pagenum_t left);
+static pagenum_t _start_new_tree(int64_t key, char * value);
+static pagenum_t _insert_into_new_root(pagenum_t left, int64_t key, pagenum_t right);
+static void _insert_into_node(pagenum_t node, int left_index, int64_t key, pagenum_t right);
+static pagenum_t _insert_into_node_after_split(pagenum_t root, pagenum_t old_node, int left_index, 
+        int64_t key, pagenum_t right);
+static pagenum_t _insert_into_parent(pagenum_t root, pagenum_t left, int64_t key, pagenum_t right);
+static void _insert_into_leaf(pagenum_t leaf, int64_t key, char *value);
+static pagenum_t _insert_into_leaf_after_split(pagenum_t root, pagenum_t leaf, int64_t key, char *value);
+
+static void _adjust_root(pagenum_t root);
+static int _get_neighbor_index(pagenum_t parent, pagenum_t node);
+static int _remove_entry_from_internal_node(pagenum_t node, int64_t key, pagenum_t pointer);
+static int _remove_record_from_leaf(pagenum_t leaf, int64_t key, char *value);
+static void _delayed_merge_nodes(pagenum_t root, pagenum_t node, pagenum_t parent
+        , pagenum_t neighbor, int neighbor_index, int64_t k_prime);
+static void _delete_record(pagenum_t root, pagenum_t leaf, int64_t key, char *value);
+static void _redistribute_nodes(pagenum_t node, pagenum_t parent
+        , pagenum_t neighbor, int neighbor_index, int64_t k_prime, int k_prime_index);
+static void _delete_internal_entry(pagenum_t root, pagenum_t node, int64_t key, pagenum_t pointer);
+
 
 // Internal functions
 // Reference to bpt.c
-
-// print.
-
-void _enqueue(pagenum_t val) {
-    _queue_node_t *curr = g_queue;
-    _queue_node_t *ptr = malloc(sizeof(_queue_node_t));
-    ptr->value = val;
-    ptr->next = NULL;
-    while (curr && curr->next) {
-        curr = curr->next;
-    }
-
-    if (curr == NULL) {
-        g_queue = ptr;
-    } else {
-        curr->next = ptr;
-    }
-}
-
-pagenum_t _dequeue() {
-    pagenum_t ret_val;
-    _queue_node_t *temp = g_queue;
-
-    if (temp == NULL) {
-        return 0;
-    }
-    ret_val = temp->value;
-    g_queue = temp->next;
-    free(temp);
-    return ret_val;
-}
-
-void _print_leaves() {
-    page_t temp_page;
-    pagenum_t temp;
-    int i;
-
-    temp_page.style = PAGE_HEADER;
-    file_read_page(0, &temp_page);
-    temp = temp_page.header_page.root_pagenum;
-    if (temp == 0) {
-        printf("Empty tree.\n");
-        return;
-    }
-    
-    temp_page.style = PAGE_INTERNAL;
-    file_read_page(temp, &temp_page);
-
-    while (!temp_page.internal_page.is_leaf) {
-        temp = temp_page.internal_page.first_pagenum;
-        file_read_page(temp, &temp_page);
-    }
-    while (1) {
-        printf("(%llu) ", temp);
-        temp = temp_page.leaf_page.right_sibling_pagenum;
-        for (i = 0; i < temp_page.leaf_page.num_of_keys; ++i) {
-            printf("%lld{%s} ", temp_page.leaf_page.records[i].key, temp_page.leaf_page.records[i].value);
-        }
-        printf("\n");
-        if (temp == 0) {
-            break;
-        }
-        file_read_page(temp, &temp_page);
-    }
-    printf("\n");
-}
-
-void _print_tree() {
-    page_t temp_page;
-    pagenum_t temp;
-    int i;
-
-    temp_page.style = PAGE_HEADER;
-    file_read_page(0, &temp_page);
-    temp = temp_page.header_page.root_pagenum;
-
-    if (temp == 0) {
-        printf("Empty tree.\n");
-        return;
-    }
-
-    _enqueue(temp);
-    _enqueue(0);
-    temp_page.style = PAGE_INTERNAL;
-    while (g_queue != NULL) {
-        temp = _dequeue();
-        if (temp == 0) {
-            printf("\n");
-            if (g_queue == NULL) break;
-            _enqueue(0);
-            continue;
-        }
-        file_read_page(temp, &temp_page);
-        printf("(%llu) ", temp);
-        
-        if (!temp_page.internal_page.is_leaf) {
-            _enqueue(temp_page.internal_page.first_pagenum);
-            for (i = 0; i < temp_page.internal_page.num_of_keys; ++i) {
-                printf("%lld ", temp_page.internal_page.entries[i].key);
-                _enqueue(temp_page.internal_page.entries[i].pagenum);
-            }
-            printf("|");
-        } else {
-            for (i = 0; i < temp_page.leaf_page.num_of_keys; ++i) {
-                printf("%lld {%s} ", temp_page.leaf_page.records[i].key, temp_page.leaf_page.records[i].value);
-            }
-            printf("| -%llu-> |", temp_page.leaf_page.right_sibling_pagenum);
-        }
-    }
-
-    printf("\n");
-}
-
-void _print_keys() {
-    page_t temp_page;
-    pagenum_t temp;
-    int i;
-
-    temp_page.style = PAGE_HEADER;
-    file_read_page(0, &temp_page);
-    temp = temp_page.header_page.root_pagenum;
-
-    if (temp == 0) {
-        printf("Empty tree.\n");
-        return;
-    }
-
-    _enqueue(temp);
-    _enqueue(0);
-    temp_page.style = PAGE_INTERNAL;
-    while (g_queue != NULL) {
-        temp = _dequeue();
-        if (temp == 0) {
-            printf("\n");
-            if (g_queue == NULL) break;
-            _enqueue(0);
-            continue;
-        }
-        file_read_page(temp, &temp_page);
-        
-        if (!temp_page.internal_page.is_leaf) {
-            _enqueue(temp_page.internal_page.first_pagenum);
-            for (i = 0; i < temp_page.internal_page.num_of_keys; ++i) {
-                printf("%lld ", temp_page.internal_page.entries[i].key);
-                _enqueue(temp_page.internal_page.entries[i].pagenum);
-            }
-            printf("|");
-        } else {
-            for (i = 0; i < temp_page.leaf_page.num_of_keys; ++i) {
-                printf("%lld ", temp_page.leaf_page.records[i].key);
-            }
-            printf("|");
-        }
-    }
-
-    printf("\n");
-}
-
 
 // find.
 
@@ -224,45 +85,30 @@ void _print_keys() {
  * if the debug flag is set.
  * Returns the page number of leaf containing the given key.
  */
-pagenum_t _find_leaf(pagenum_t root, int64_t key, int debug) {
+static pagenum_t _find_leaf(pagenum_t root, int64_t key) {
     int i = 0;
     page_t c;
 
     // if tree is empty.
     if (root == 0) {
-        if (debug) 
-            printf("Empty tree.\n");
         return root;
     }
     
     // Read root page to c
-    c.style = PAGE_INTERNAL;
+
     file_read_page(root, &c);
 
 
     while (!c.internal_page.is_leaf) {
-        if (debug) {
-            printf("[");
-            for (i = 0; i < c.internal_page.num_of_keys - 1; i++)
-                printf("%lld ", c.internal_page.entries[i].key);
-            printf("%lld] ", c.internal_page.entries[i].key);
-        }
         i = 0;
         while (i < c.internal_page.num_of_keys) {
             if (key >= c.internal_page.entries[i].key) i++;
             else break;
         }
-        if (debug)
-            printf("%d ->\n", i);
         root = *(&c.internal_page.first_pagenum + 2 * i);
         file_read_page(root, &c);
     }
-    if (debug) {
-        printf("Leaf [");
-        for (i = 0; i < c.leaf_page.num_of_keys - 1; i++)
-            printf("%lld ", c.leaf_page.records[i].key);
-        printf("%lld] ->\n", c.leaf_page.records[i].key);
-    }
+
     return root;
 }
 
@@ -271,7 +117,7 @@ pagenum_t _find_leaf(pagenum_t root, int64_t key, int debug) {
 /* Finds the appropriate place to
  * split a node that is too big into two.
  */
-int _cut(int length) {
+static int _cut(int length) {
     if (length % 2 == 0)
         return length/2;
     else
@@ -282,7 +128,7 @@ int _cut(int length) {
  * to find the index of the parent's child pagenum to 
  * the left that has the key to be inserted.
  */
-int _get_left_index(pagenum_t parent, pagenum_t left) {
+static int _get_left_index(pagenum_t parent, pagenum_t left) {
 
     int left_index = 0;
     page_t parent_page;
@@ -297,7 +143,7 @@ int _get_left_index(pagenum_t parent, pagenum_t left) {
 /* Start a new tree with given record.
  * This function will be called at first insertion.
  */
-pagenum_t _start_new_tree(int64_t key, char * value) {
+static pagenum_t _start_new_tree(int64_t key, char * value) {
     page_t root;
     pagenum_t pagenum = file_alloc_page();
 
@@ -319,7 +165,7 @@ pagenum_t _start_new_tree(int64_t key, char * value) {
  * the new root.
  * Returns new root page number.
  */
-pagenum_t _insert_into_new_root(pagenum_t left, int64_t key, pagenum_t right) {
+static pagenum_t _insert_into_new_root(pagenum_t left, int64_t key, pagenum_t right) {
 
     pagenum_t root = file_alloc_page();
     page_t root_page;
@@ -350,7 +196,7 @@ pagenum_t _insert_into_new_root(pagenum_t left, int64_t key, pagenum_t right) {
  * into a node into which these can fit
  * without violating the B+ tree properties.
  */
-void _insert_into_node(pagenum_t node, int left_index, int64_t key, pagenum_t right) {
+static void _insert_into_node(pagenum_t node, int left_index, int64_t key, pagenum_t right) {
 
     int i;
     page_t node_page;
@@ -373,7 +219,7 @@ void _insert_into_node(pagenum_t node, int left_index, int64_t key, pagenum_t ri
  * the order, and causing the node to split into two.
  * Returns the root page number of the tree after insertion.
  */
-pagenum_t _insert_into_node_after_split(pagenum_t root, pagenum_t old_node, int left_index, 
+static pagenum_t _insert_into_node_after_split(pagenum_t root, pagenum_t old_node, int left_index, 
         int64_t key, pagenum_t right) {
 
     page_t old_node_page, new_node_page, child_page;
@@ -465,7 +311,7 @@ pagenum_t _insert_into_node_after_split(pagenum_t root, pagenum_t old_node, int 
 /* Inserts a new node (leaf or internal node) into the B+ tree.
  * Returns the root page number of the tree after insertion.
  */
-pagenum_t _insert_into_parent(pagenum_t root, pagenum_t left, int64_t key, pagenum_t right) {
+static pagenum_t _insert_into_parent(pagenum_t root, pagenum_t left, int64_t key, pagenum_t right) {
     
     int left_index;
     pagenum_t parent;
@@ -510,7 +356,7 @@ pagenum_t _insert_into_parent(pagenum_t root, pagenum_t left, int64_t key, pagen
 
 /* Inserts a new record into a leaf.
  */
-void _insert_into_leaf(pagenum_t leaf, int64_t key, char *value) {
+static void _insert_into_leaf(pagenum_t leaf, int64_t key, char *value) {
 
     int i, insertion_point;
     page_t leaf_page;
@@ -537,7 +383,7 @@ void _insert_into_leaf(pagenum_t leaf, int64_t key, char *value) {
  * the leaf page.
  * Returns the root page number of the tree after insertion.
  */
-pagenum_t _insert_into_leaf_after_split(pagenum_t root, pagenum_t leaf, int64_t key, char *value) {
+static pagenum_t _insert_into_leaf_after_split(pagenum_t root, pagenum_t leaf, int64_t key, char *value) {
     
     pagenum_t new_leaf = file_alloc_page();
     page_t new_leaf_page, leaf_page;
@@ -615,7 +461,7 @@ pagenum_t _insert_into_leaf_after_split(pagenum_t root, pagenum_t leaf, int64_t 
  * And if it is empty, adjust root.
  * Then free old root page.
  */
-void _adjust_root(pagenum_t root) {
+static void _adjust_root(pagenum_t root) {
     pagenum_t new_root;
     page_t root_page;
 
@@ -661,7 +507,7 @@ void _adjust_root(pagenum_t root) {
  * is the leftmost child), returns -1 to signify
  * this special case.
  */
-int _get_neighbor_index(pagenum_t parent, pagenum_t node) {
+static int _get_neighbor_index(pagenum_t parent, pagenum_t node) {
     int i;
     page_t temp_page;
         
@@ -687,7 +533,7 @@ int _get_neighbor_index(pagenum_t parent, pagenum_t node) {
  * Interanl page version of remove_entry_from_node in bpt.c
  * Return number of keys of given leaf page.
  */
-int _remove_entry_from_internal_node(pagenum_t node, int64_t key, pagenum_t pointer) {
+static int _remove_entry_from_internal_node(pagenum_t node, int64_t key, pagenum_t pointer) {
     
     int i;
     page_t internal_page;
@@ -725,7 +571,7 @@ int _remove_entry_from_internal_node(pagenum_t node, int64_t key, pagenum_t poin
  * Leaf page version of remove_entry_from_node in bpt.c
  * Return number of keys of given leaf page.
  */
-int _remove_record_from_leaf(pagenum_t leaf, int64_t key, char *value) {
+static int _remove_record_from_leaf(pagenum_t leaf, int64_t key, char *value) {
     
     int i;
     page_t leaf_page;
@@ -763,7 +609,7 @@ int _remove_record_from_leaf(pagenum_t leaf, int64_t key, char *value) {
  * empty after deletion
  * and a neighboring node.
  */
-void _delayed_merge_nodes(pagenum_t root, pagenum_t node, pagenum_t parent
+static void _delayed_merge_nodes(pagenum_t root, pagenum_t node, pagenum_t parent
         , pagenum_t neighbor, int neighbor_index, int64_t k_prime) {
     
     page_t temp_page;
@@ -840,7 +686,7 @@ void _delayed_merge_nodes(pagenum_t root, pagenum_t node, pagenum_t parent
  * makes all appropriate changes to preserve
  * the B+ tree properties.
  */
-void _delete_record(pagenum_t root, pagenum_t leaf, int64_t key, char *value) {
+static void _delete_record(pagenum_t root, pagenum_t leaf, int64_t key, char *value) {
     
     int leaf_num_keys, neighbor_index, k_prime_index;
     pagenum_t neighbor, parent;
@@ -895,7 +741,7 @@ void _delete_record(pagenum_t root, pagenum_t leaf, int64_t key, char *value) {
  * one more entry without exceeding the
  * maximum
  */
-void _redistribute_nodes(pagenum_t node, pagenum_t parent
+static void _redistribute_nodes(pagenum_t node, pagenum_t parent
         , pagenum_t neighbor, int neighbor_index, int64_t k_prime, int k_prime_index) {  
     
     page_t temp_page;
@@ -979,7 +825,7 @@ void _redistribute_nodes(pagenum_t node, pagenum_t parent
  * makes all appropriate changes to preserve
  * the B+ tree properties.
  */
-void _delete_internal_entry(pagenum_t root, pagenum_t node, int64_t key, pagenum_t pointer) {
+static void _delete_internal_entry(pagenum_t root, pagenum_t node, int64_t key, pagenum_t pointer) {
     
     int node_num_keys, neighbor_index, k_prime_index;
     pagenum_t neighbor, parent;
@@ -1041,45 +887,40 @@ void _delete_internal_entry(pagenum_t root, pagenum_t node, int64_t key, pagenum
 
 
 
-// Functions of own disk-based bpt
+// External functions.
 
-/* Open data file using ‘pathname’ or create one if not existed.
- * If success, return the unique table id.
- * Otherwise, return negative value.
+/**
+ * A initializing function.
+ * Allocate the buffer pool (array) 
+ *   with the given number of entries by buf_num
+ *   by calling buffer initializing function in buffer management layer.
+ * Initialize other fields such as state info, LRU info, etc.
+ * \param buf_num Number of entries in the buffer pool.
+ *      Allocate with this number of buffers.
+ * \return If success, return 0. Otherwise, return non-zero value.
+ */
+int init_db(int num_buf) {
+    return buf_init_db(num_buf);
+}
+
+/**
+ * Open or Create a file(table) corresponding to pathname.
+ * If open this table for the first time,
+ *   set empty space of global array fd to file descriptor of opened file.
+ * Then store pathname in same index of global array stored_pathname.
+ * The index of empty space is allocate to this table for table id.
+ * Otherwise, just return unique table id.
+ * \param pathname path name for a file to be opened or created.
+ * \return If success, return unique table id of corresponding file to \p pathname .
+ *      Otherwise, return negative value.
  */
 int open_table(char *pathname) {
-    int table_id;
-    
-    // Open file
-    file_open_file(pathname);
-
-    /* Search for table id
-     * If the table id that has this pathnamealready exist,
-     *     return that id.
-     */
-    for(table_id = 0; table_id < 5; ++table_id) {
-        if (g_path_names[table_id] != NULL
-            && strcmp(pathname, g_path_names[table_id]) == 0) {
-            return table_id;
-        }
-    }
-    // Otherwise, search free id.
-    for(table_id = 0; g_path_names[table_id] != NULL; ++table_id) {
-        continue;
-    }
-
-    // If there is no free id, close file and fail.
-    if(table_id >= 5) {
-        file_close_file();
-        return -1;
-    }
-    // Otherwise, record path name to global array and return id.
-    g_path_names[table_id] = pathname;
-    return table_id;
+    return buf_open_table(pathname);
 }
 
 
-/* Insert input ‘key/value’ (record) to data file at the right place.
+/**
+ * Insert input ‘key/value’ (record) to data file at the right place.
  * If success, return 0. Otherwise, return non-zero value.
  */
 int db_insert(int64_t key, char * value) {
@@ -1135,7 +976,8 @@ int db_insert(int64_t key, char * value) {
 }
 
 
-/* Find the record containing input ‘key’.
+/**
+ * Find the record containing input ‘key’.
  * If found matching ‘key’, store matched ‘value’ string in ret_val and return 0.
  * Otherwise, return non-zero value.
  * Memory allocation for record structure(ret_val) should occur in caller function.
@@ -1166,7 +1008,8 @@ int db_find(int64_t key, char * ret_val) {
 }
 
 
-/* Find the matching record and delete it if found.
+/**
+ * Find the matching record and delete it if found.
  * If success, return 0. Otherwise, return non-zero value.
  */
 int db_delete(int64_t key) {
@@ -1191,9 +1034,10 @@ int db_delete(int64_t key) {
 }
 
 
-/* Close the opened data file.
- * If success, return 0. Otherwise, return -1.
+/**
+//  * Close the opened data file.
+//  * If success, return 0. Otherwise, return -1.
  */
-int close_table(void) {
+int close_table(int table_id) {
     return file_close_file();
 }
