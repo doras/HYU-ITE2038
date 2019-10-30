@@ -42,12 +42,12 @@
 /**
  * Order of leaf page.
  */
-const int ORDER_OF_LEAF = 3;
+const int ORDER_OF_LEAF = 32;
 
 /**
  * Order of internal page.
  */
-const int ORDER_OF_INTERNAL = 5;
+const int ORDER_OF_INTERNAL = 249;
 
 
 // FUNCTIONS.
