@@ -18,7 +18,7 @@ SAMPLE_DATA:=datafile
 
 # Include more files if you write another source file.
 # SRCS_FOR_LIB:=$(SRCDIR)bpt.c $(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c
-SRCS_FOR_LIB:=$(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c
+SRCS_FOR_LIB:=$(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c $(SRCDIR)buffer_manager.c
 OBJS_FOR_LIB:=$(SRCS_FOR_LIB:.c=.o)
 
 CFLAGS+= -g -fPIC -I $(INC)

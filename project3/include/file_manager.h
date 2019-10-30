@@ -5,8 +5,13 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+
+#define MAX_TABLE_ID 10
 
 
 // TYPES.
@@ -16,17 +21,6 @@
  */
 typedef uint64_t pagenum_t;
 
-
-/* Enum structure for in-memory page structure.
- * This enum value indicates what kind of pages that is.
- */
-typedef enum {
-    PAGE_HEADER,
-    PAGE_FREE,
-    PAGE_INTERNAL,
-    PAGE_LEAF,
-    PAGE_INVALID
-} page_style_t;
 
 /* Type representing the record
  * to which a given key refers.
@@ -56,44 +50,34 @@ typedef struct {
  * such as Header, Free, Internal or Leaf page.
  * Because of generalness, this structure needs typecasting in many cases.
  */
-typedef struct {
+typedef union {
+    struct {
+        pagenum_t free_pagenum;
+        pagenum_t root_pagenum;
+        pagenum_t num_of_pages;
+    } header_page;
 
-    // Equivalent area to on-disk page layout 
-    
-    union {
-        struct {
-            pagenum_t free_pagenum;
-            pagenum_t root_pagenum;
-            pagenum_t num_of_pages;
-        } header_page;
+    struct {
+        pagenum_t next_free_pagenum;
+    } free_page;
 
-        struct {
-            pagenum_t next_free_pagenum;
-        } free_page;
+    struct {
+        pagenum_t parent_pagenum;
+        int is_leaf;
+        int num_of_keys;
+        char _reserved[104];
+        pagenum_t first_pagenum;
+        key_pagenum_pair entries[248];
+    } internal_page;
 
-        struct {
-            pagenum_t parent_pagenum;
-            int is_leaf;
-            int num_of_keys;
-            char _reserved[104];
-            pagenum_t first_pagenum;
-            key_pagenum_pair entries[248];
-        } internal_page;
-
-        struct {
-            pagenum_t parent_pagenum;
-            int is_leaf;
-            int num_of_keys;
-            char _reserved[104];
-            pagenum_t right_sibling_pagenum;
-            record records[31];
-        } leaf_page;
-    };
-
-    // Additional area only in in-memory structure
-
-    page_style_t style;
-
+    struct {
+        pagenum_t parent_pagenum;
+        int is_leaf;
+        int num_of_keys;
+        char _reserved[104];
+        pagenum_t right_sibling_pagenum;
+        record records[31];
+    } leaf_page;
 } page_t;
 
 
@@ -105,39 +89,35 @@ typedef struct {
  */
 extern const uint64_t ON_DISK_PAGE_SIZE;
 
-/* Real size of on-disk header page
- * except reserved area.
- */
-extern const uint64_t HEADER_PAGE_SIZE;
-
-/* Real size of on-disk free page
- * except reserved area.
- */
-extern const uint64_t FREE_PAGE_SIZE;
-
 
 // GLOBALS.
 
 
-/* File descriptor.
- * File descriptor is non-negative integer value.
+/** 
+ * File descriptors.
+ * A valid file descriptor is non-negative integer value.
  * Negative value means invalid value.
- * When file opens, fd is set.
- * When file closes, fd is unset to negative value.
+ * Use table id (1 ~ MAX_TABLE_ID) for index.
+ * First element of array is invalid negative valude.
  */
-extern int fd;
+extern int fd[MAX_TABLE_ID + 1];
+
+/** 
+ * Stored path names.
+ * Used for table id checking.
+ * Use table id (1 ~ MAX_TABLE_ID) for index.
+ * First element of array is invalid pathname, NULL.
+ */
+extern char *stored_pathname[MAX_TABLE_ID + 1];
 
 
 // FUNCTIONS.
 
 
-void file_open_file(char *pathname);
-off_t file_extend_file();
-pagenum_t file_alloc_page();
-void file_free_page(pagenum_t pagenum);
-void file_read_page(pagenum_t pagenum, page_t* dest);
-void file_write_page(pagenum_t pagenum, const page_t* src);
-int file_close_file(void);
-
+int file_open_file(char *pathname);
+off_t file_extend_file(int table_id, page_t *header_page);
+void file_read_page(int table_id, pagenum_t pagenum, page_t* dest);
+void file_write_page(int table_id, pagenum_t pagenum, const page_t* src);
+int file_close_file(int table_id);
 
 #endif // __FILE_MANAGER_H__
