@@ -12,8 +12,7 @@
  *   which is compose buffer management layer.
  * Contains physical frame and more meta-data.
  * If table_id is negative value, the instance is invalid.
- * For replacement policy, this structure is managed by LRU list
- *      as doubly circular linked list queue.
+ * For replacement policy, this structure is managed by LRU clock.
  */
 typedef struct _Buffer{
     page_t frame;
