@@ -105,8 +105,6 @@ int buf_close_table(int table_id) {
  * \param table_id Indicate the table where the page is.
  * \param page_num Page number of the page to be returned.
  * \return Returns a pointer to the buffer structure designated by arguments.
- *      If fail to get, for example, pool is full and all structure is pinned,
- *      return NULL.
  */
 buffer_t *buf_get_page(int table_id, pagenum_t page_num) {
     int i;
