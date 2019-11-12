@@ -500,6 +500,7 @@ static void _adjust_root(int table_id, pagenum_t root) {
 
     else {
         new_root = 0;
+        buf_put_page(root_page, 0);
     }
 
     root_page = buf_get_page(table_id, 0);
