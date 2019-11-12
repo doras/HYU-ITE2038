@@ -241,8 +241,8 @@ void buf_free_page(int table_id, pagenum_t pagenum) {
     header = buf_get_page(table_id, 0);
     freeing_page = buf_get_page(table_id, pagenum);
 
-    header->frame.header_page.free_pagenum = pagenum;
     freeing_page->frame.free_page.next_free_pagenum = header->frame.header_page.free_pagenum;
+    header->frame.header_page.free_pagenum = pagenum;
 
     buf_put_page(header, 1);
     buf_put_page(freeing_page, 1);
