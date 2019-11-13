@@ -1110,7 +1110,7 @@ int join_table(int table_id_1, int table_id_2, char * pathname) {
                 < curr_page_2->frame.leaf_page.records[curr_rec_2].key) {
             
             ++curr_rec_1;
-            if (curr_rec_1 >= ORDER_OF_LEAF - 1) {
+            if (curr_rec_1 >= curr_page_1->frame.leaf_page.num_of_keys) {
                 temp_pagenum = curr_page_1->frame.leaf_page.right_sibling_pagenum;
                 if (temp_pagenum == 0) {
                     buf_put_page(curr_page_1, 0);
@@ -1128,7 +1128,7 @@ int join_table(int table_id_1, int table_id_2, char * pathname) {
                 < curr_page_1->frame.leaf_page.records[curr_rec_1].key) {
             
             ++curr_rec_2;
-            if (curr_rec_2 >= ORDER_OF_LEAF - 1) {
+            if (curr_rec_2 >= curr_page_2->frame.leaf_page.num_of_keys) {
                 temp_pagenum = curr_page_2->frame.leaf_page.right_sibling_pagenum;
                 if (temp_pagenum == 0) {
                     buf_put_page(curr_page_1, 0);
@@ -1151,7 +1151,7 @@ int join_table(int table_id_1, int table_id_2, char * pathname) {
                 , curr_page_2->frame.leaf_page.records[curr_rec_2].value);
 
             ++curr_rec_2;
-            if (curr_rec_2 >= ORDER_OF_LEAF - 1) {
+            if (curr_rec_2 >= curr_page_2->frame.leaf_page.num_of_keys) {
                 temp_pagenum = curr_page_2->frame.leaf_page.right_sibling_pagenum;
                 if (temp_pagenum == 0) {
                     buf_put_page(curr_page_1, 0);
