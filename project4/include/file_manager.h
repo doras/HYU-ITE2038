@@ -32,7 +32,7 @@ typedef uint64_t pagenum_t;
  * to change the type and content
  * of the value field.
  */
-typedef struct record {
+typedef struct {
     int64_t key;
     char value[120];
 } record;

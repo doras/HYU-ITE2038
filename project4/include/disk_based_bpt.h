@@ -28,6 +28,7 @@ int db_find(int table_id, int64_t key, char * ret_val);
 int db_delete(int table_id, int64_t key);
 int close_table(int table_id);
 int shutdown_db(void);
+int join_table(int table_id_1, int table_id_2, char * pathname);
 
 
 #endif

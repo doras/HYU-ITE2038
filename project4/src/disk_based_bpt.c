@@ -87,6 +87,7 @@ static void _delete_internal_entry(int table_id, pagenum_t root, pagenum_t node,
  * Traces the path from the root to a leaf, searching
  * by key.
  * \return Returns the page number of leaf containing the given key.
+ *      If tree is empty, returns 0.
  */
 static pagenum_t _find_leaf(int table_id, pagenum_t root, int64_t key) {
     int i = 0;
@@ -263,7 +264,7 @@ static pagenum_t _insert_into_node_after_split(int table_id, pagenum_t root, pag
     old_node_page = buf_get_page(table_id, old_node);
 
     for (i = 0, j = 0; i < old_node_page->frame.internal_page.num_of_keys + 1; ++i, ++j) {
-        if(j == left_index + 1) ++j;
+        if (j == left_index + 1) ++j;
         temp_pagenums[j] = *(&old_node_page->frame.internal_page.first_pagenum + 2 * i);
     }
     
@@ -1008,7 +1009,7 @@ int db_find(int table_id, int64_t key, char * ret_val) {
         buf_put_page(tmp_page, 0);
         return 1;
     } else {
-        if(ret_val != NULL)
+        if (ret_val != NULL)
             strncpy(ret_val, tmp_page->frame.leaf_page.records[i].value, 120);
         buf_put_page(tmp_page, 0);
         return 0;
@@ -1018,7 +1019,7 @@ int db_find(int table_id, int64_t key, char * ret_val) {
 
 /**
  * Find the matching record and delete it if found.
- * If success, return 0. Otherwise, return non-zero value.
+ * \return If success, return 0. Otherwise, return non-zero value.
  */
 int db_delete(int table_id, int64_t key) {
     buffer_t *temp_page;
@@ -1058,4 +1059,110 @@ int close_table(int table_id) {
  */
 int shutdown_db(void) {
     return buf_shutdown_db();
+}
+
+/**
+ * Do natural join with given two tables
+ * and write result table to the file using given pathname.
+ * Two tables should have been opened earlier.
+ * 
+ * Result file format should contain a line of 
+ *      “a.key,a.value,b.key,b.value”
+ * where each items are separated by comma.
+ * 
+ * \param table_id_1 table id of the first join target table.
+ * \param table_id_2 table id of the second join target table.
+ * \param pathname path name for result file.
+ * 
+ * \return Return 0 if success, otherwise return non-zero value.
+ */
+int join_table(int table_id_1, int table_id_2, char * pathname) {
+    buffer_t *curr_page_1, *curr_page_2;
+    pagenum_t root_pagenum_1, root_pagenum_2, temp_pagenum;
+    buffer_t *header_1, *header_2;
+    int curr_rec_1 = 0, curr_rec_2 = 0;
+    FILE *output;
+
+    if (!pathname) {
+        return -1;
+    }
+
+    output = fopen(pathname, "w");
+
+    header_1 = buf_get_page(table_id_1, 0);
+    root_pagenum_1 = header_1->frame.header_page.root_pagenum;
+    buf_put_page(header_1, 0);
+
+    header_2 = buf_get_page(table_id_2, 0);
+    root_pagenum_2 = header_2->frame.header_page.root_pagenum;
+    buf_put_page(header_2, 0);
+
+    if (!root_pagenum_1 || !root_pagenum_2) {
+        fclose(output);
+        return 0;
+    }
+
+    curr_page_1 = buf_get_page(table_id_1, _find_leaf(table_id_1, root_pagenum_1, INT64_MIN));
+    curr_page_2 = buf_get_page(table_id_2, _find_leaf(table_id_2, root_pagenum_2, INT64_MIN));
+
+    while (1) {
+        while (curr_page_1->frame.leaf_page.records[curr_rec_1].key
+                < curr_page_2->frame.leaf_page.records[curr_rec_2].key) {
+            
+            ++curr_rec_1;
+            if (curr_rec_1 >= ORDER_OF_LEAF - 1) {
+                temp_pagenum = curr_page_1->frame.leaf_page.right_sibling_pagenum;
+                if (temp_pagenum == 0) {
+                    buf_put_page(curr_page_1, 0);
+                    buf_put_page(curr_page_2, 0);
+                    fclose(output);
+                    return 0;
+                }
+                buf_put_page(curr_page_1, 0);
+                curr_page_1 = buf_get_page(table_id_1, temp_pagenum);
+                curr_rec_1 = 0;
+            }
+        }
+        
+        while (curr_page_2->frame.leaf_page.records[curr_rec_2].key
+                < curr_page_1->frame.leaf_page.records[curr_rec_1].key) {
+            
+            ++curr_rec_2;
+            if (curr_rec_2 >= ORDER_OF_LEAF - 1) {
+                temp_pagenum = curr_page_2->frame.leaf_page.right_sibling_pagenum;
+                if (temp_pagenum == 0) {
+                    buf_put_page(curr_page_1, 0);
+                    buf_put_page(curr_page_2, 0);
+                    fclose(output);
+                    return 0;
+                }
+                buf_put_page(curr_page_2, 0);
+                curr_page_2 = buf_get_page(table_id_2, temp_pagenum);
+                curr_rec_2 = 0;
+            }
+        }
+
+        if (curr_page_1->frame.leaf_page.records[curr_rec_1].key
+                == curr_page_2->frame.leaf_page.records[curr_rec_2].key) {
+            fprintf(output, "%ld,%s,%ld,%s\n"
+                , curr_page_1->frame.leaf_page.records[curr_rec_1].key
+                , curr_page_1->frame.leaf_page.records[curr_rec_1].value
+                , curr_page_2->frame.leaf_page.records[curr_rec_2].key
+                , curr_page_2->frame.leaf_page.records[curr_rec_2].value);
+
+            ++curr_rec_2;
+            if (curr_rec_2 >= ORDER_OF_LEAF - 1) {
+                temp_pagenum = curr_page_2->frame.leaf_page.right_sibling_pagenum;
+                if (temp_pagenum == 0) {
+                    buf_put_page(curr_page_1, 0);
+                    buf_put_page(curr_page_2, 0);
+                    fclose(output);
+                    return 0;
+                }
+                buf_put_page(curr_page_2, 0);
+                curr_page_2 = buf_get_page(table_id_2, temp_pagenum);
+                curr_rec_2 = 0;
+            }
+        }
+    }
 }
