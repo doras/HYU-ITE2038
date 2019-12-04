@@ -16,11 +16,12 @@ CPP_SRCS_FOR_LIB:=$(SRCDIR)lock_manager.cc
 C_OBJS_FOR_LIB:=$(C_SRCS_FOR_LIB:.c=.o)
 CPP_OBJS_FOR_LIB:=$(CPP_SRCS_FOR_LIB:.cc=.o)
 
-CFLAGS+= -g -fPIC -I $(INC)
+CPPFLAGS+= -g -fPIC -I $(INC)
+CXXFLAGS += -std=c++11
 
 all:
-	$(foreach SRC,$(C_SRCS_FOR_LIB),gcc $(CFLAGS) -o $(SRC:.c=.o) -c $(SRC);)
-	$(foreach SRC,$(CPP_SRCS_FOR_LIB),g++ $(CFLAGS) -std=c++11 -o $(SRC:.cc=.o) -c $(SRC);)
+	$(foreach SRC,$(C_SRCS_FOR_LIB),gcc $(CPPFLAGS) -o $(SRC:.c=.o) -c $(SRC);)
+	$(foreach SRC,$(CPP_SRCS_FOR_LIB),g++ $(CPPFLAGS) $(CXXFLAGS) -o $(SRC:.cc=.o) -c $(SRC);)
 	make static_library
 
 clean:
