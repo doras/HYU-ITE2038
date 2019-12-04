@@ -1,7 +1,6 @@
 build/
-main.c
-print_bpt.c
-print_bpt.h
+main.*
+print_bpt.*
 .vscode
 .DS_store
 validity.py

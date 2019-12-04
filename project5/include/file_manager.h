@@ -13,6 +13,10 @@
 
 #define MAX_TABLE_ID 10
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 // TYPES.
 
@@ -119,5 +123,9 @@ off_t file_extend_file(int table_id, page_t *header_page);
 void file_read_page(int table_id, pagenum_t pagenum, page_t* dest);
 void file_write_page(int table_id, pagenum_t pagenum, const page_t* src);
 int file_close_file(int table_id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // __FILE_MANAGER_H__

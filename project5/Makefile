@@ -1,6 +1,6 @@
-.SUFFIXES: .c .o
+.SUFFIXES: .c .o .cc
 
-CC=gcc
+CC=g++
 
 SRCDIR=src/
 INC=include/
@@ -11,20 +11,20 @@ LIBS=lib/
 
 # Include more files if you write another source file.
 # SRCS_FOR_LIB:=$(SRCDIR)bpt.c $(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c
-SRCS_FOR_LIB:=$(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c $(SRCDIR)buffer_manager.c $(SRCDIR)lock_manager.c
-OBJS_FOR_LIB:=$(SRCS_FOR_LIB:.c=.o)
+C_SRCS_FOR_LIB:=$(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c $(SRCDIR)buffer_manager.c
+CPP_SRCS_FOR_LIB:=$(SRCDIR)lock_manager.cc
+C_OBJS_FOR_LIB:=$(C_SRCS_FOR_LIB:.c=.o)
+CPP_OBJS_FOR_LIB:=$(CPP_SRCS_FOR_LIB:.cc=.o)
 
 CFLAGS+= -g -fPIC -I $(INC)
 
 all:
-	$(foreach SRC,$(SRCS_FOR_LIB),$(CC) $(CFLAGS) -o $(SRC:.c=.o) -c $(SRC);)
+	$(foreach SRC,$(C_SRCS_FOR_LIB),gcc $(CFLAGS) -o $(SRC:.c=.o) -c $(SRC);)
+	$(foreach SRC,$(CPP_SRCS_FOR_LIB),g++ $(CFLAGS) -std=c++11 -o $(SRC:.cc=.o) -c $(SRC);)
 	make static_library
 
 clean:
-	rm $(OBJS_FOR_LIB) $(LIBS)*
-
-library:
-	gcc -shared -Wl,-soname,libbpt.so -o $(LIBS)libbpt.so $(OBJS_FOR_LIB)
+	rm $(C_OBJS_FOR_LIB) $(CPP_OBJS_FOR_LIB) $(LIBS)*
 
 static_library:
-	ar cr $(LIBS)libbpt.a $(OBJS_FOR_LIB)
+	ar cr $(LIBS)libbpt.a $(C_OBJS_FOR_LIB) $(CPP_OBJS_FOR_LIB)

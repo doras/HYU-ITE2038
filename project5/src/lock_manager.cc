@@ -13,11 +13,11 @@ int begin_trx() {
     int tid = g_usable_tid;
     ++g_usable_tid;
 
-    trx_t *new_trx = malloc(sizeof(trx_t));
+    trx_t *new_trx = new trx_t;
     if (new_trx == NULL) {
         return 0;
     }
-    new_trx->status = RUNNING;
+    new_trx->status = trx_status_t::RUNNING;
     new_trx->tid = tid;
     new_trx->locks = NULL;
     new_trx->num_of_locks = 0;
@@ -57,12 +57,12 @@ int end_trx(int tid) {
     int i;
     for (i = 0; i < curr_trx->num_of_locks; ++i) {
         curr_lock = curr_trx->locks[i];
-        free(curr_lock); // Just deallocate yet, because lock_t and locking function are not implemented.
+        delete curr_lock; // Just deallocate yet, because lock_t and locking function are not implemented.
     }
     if (curr_trx->locks)
-        free(curr_trx->locks);
+        delete curr_trx->locks;
     
-    free(curr_trx);
+    delete curr_trx;
 
     return tid;
 }

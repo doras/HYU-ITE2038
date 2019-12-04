@@ -7,21 +7,24 @@
 
 // TYPES.
 
-typedef enum {
+enum class trx_status_t{
     RUNNING,
     WAITING
-} trx_status_t;
+};
 
-typedef struct _lock_t lock_t;
+class lock_t {
+//TODO
+};
 
-typedef struct _trx_t{
+class trx_t{
+public:
     int tid;
     trx_status_t status;
     lock_t **locks;
     int num_of_locks;
     lock_t *waiting_for;
-    struct _trx_t *next_trx; // for trx table. (linked list)
-} trx_t;
+    trx_t *next_trx; // for trx table. (linked list)
+};
 
 // GLOBALS.
 

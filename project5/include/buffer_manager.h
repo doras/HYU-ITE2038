@@ -1,8 +1,11 @@
 #ifndef __BUFFER_MANAGER_H__
 #define __BUFFER_MANAGER_H__
 
-
 #include "file_manager.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // TYPES.
 
@@ -54,5 +57,9 @@ void buf_put_page(buffer_t *buf, char dirty);
 pagenum_t buf_alloc_page(int table_id);
 void buf_free_page(int table_id, pagenum_t pagenum);
 int buf_shutdown_db(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

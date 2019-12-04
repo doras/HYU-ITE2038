@@ -7,6 +7,10 @@
 
 #include "buffer_manager.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 // CONSTANTS.
 
@@ -30,5 +34,8 @@ int close_table(int table_id);
 int shutdown_db(void);
 int join_table(int table_id_1, int table_id_2, char * pathname);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif
