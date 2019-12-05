@@ -2,7 +2,7 @@
  * buffer_manager.c
  */
 
-#include "buffer_manager.h"
+#include "buffer_manager.hpp"
 
 
 // GLOBALS.
@@ -12,6 +12,11 @@
  * A buffer array where all buffers are stored.
  */
 buffer_t *g_buffer_pool = NULL;
+
+/**
+ * Latch for whole buffer pool.
+ */
+pthread_mutex_t g_buffer_pool_latch = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * Store size of buffer pool.
@@ -45,17 +50,19 @@ int buf_init_db(int buf_num) {
         return 1;
     }
 
-    g_buffer_pool = malloc(sizeof(buffer_t) * buf_num);
-    
-    // Fail to allocate.
-    if (g_buffer_pool == NULL) {
+    try {
+        g_buffer_pool = new buffer_t[buf_num];
+    } catch (...) {
+        // Fail to allocate.
         return 1;
     }
+    
 
     g_buffer_size = buf_num;
 
     for (i = 0; i < buf_num; ++i) {
         g_buffer_pool[i].table_id = -1; // means that object is invalid.
+        pthread_mutex_init(&g_buffer_pool[i].page_latch, NULL);
     }
     
     return 0;
@@ -110,72 +117,99 @@ buffer_t *buf_get_page(int table_id, pagenum_t page_num) {
     int i;
     char done = 0;
     buffer_t *curr_buf;
-    // Find the page from buffer pool
-    for (i = 0; i < g_buffer_size; ++i) {
-        if (g_buffer_pool[i].table_id == table_id 
-                && g_buffer_pool[i].page_number == page_num) {
+    bool acquired = false;
+    bool retry = false;
 
-            while (g_buffer_pool[i].is_pinned) continue; // If the page is pinned, wait for unpin
+    while (!acquired) {
+    // acquire global buffer pool latch
+        pthread_mutex_lock(&g_buffer_pool_latch);
 
-            ++g_buffer_pool[i].is_pinned;
+        // Find the page from buffer pool
+        for (i = 0; i < g_buffer_size; ++i) {
+            if (g_buffer_pool[i].table_id == table_id 
+                    && g_buffer_pool[i].page_number == page_num) {
+
+                // Fail to acquire page latch
+                if (pthread_mutex_trylock(&g_buffer_pool[i].page_latch) != 0) {
+                    retry = true; // set the retry flag
+                    break;
+                }
+
+                g_buffer_pool[i].is_pinned = 1;
+                g_buffer_pool[i].ref_bit = 1;
+
+                pthread_mutex_unlock(&g_buffer_pool_latch);
+                return g_buffer_pool + i;
+            }
+        }
+
+        if (retry) {
+            pthread_mutex_unlock(&g_buffer_pool_latch);
+            retry = false;
+            continue;
+        }
+
+        /* Case: Buffer caching miss.
+        * There is no such page in pool.
+        */
+
+        // check buffer pool
+        for (i = 0; i < g_buffer_size && g_buffer_pool[i].table_id > 0; ++i) {
+            continue;
+        }
+
+
+        // Case: pool is not full.
+        if (i < g_buffer_size) {
+            // Read page into the empty space of buffer pool.
+            // And return it.
+            file_read_page(table_id, page_num, &g_buffer_pool[i].frame);
+
+            pthread_mutex_lock(&g_buffer_pool[i].page_latch);
+
+            g_buffer_pool[i].table_id = table_id;
+            g_buffer_pool[i].page_number = page_num;
+            g_buffer_pool[i].is_dirty = 0;
+            g_buffer_pool[i].is_pinned = 1;
             g_buffer_pool[i].ref_bit = 1;
+
+            pthread_mutex_unlock(&g_buffer_pool_latch);
+
             return g_buffer_pool + i;
         }
-    }
-
-    /* Case: Buffer caching miss.
-     * There is no such page in pool.
-     */
-
-    // check buffer pool
-    for (i = 0; i < g_buffer_size && g_buffer_pool[i].table_id > 0; ++i) {
-        continue;
-    }
 
 
-    // Case: pool is not full.
-    if (i < g_buffer_size) {
-        // Read page into the empty space of buffer pool.
-        // And return it.
-        file_read_page(table_id, page_num, &g_buffer_pool[i].frame);
+        /* Perform replacement */
 
-        g_buffer_pool[i].table_id = table_id;
-        g_buffer_pool[i].page_number = page_num;
-        g_buffer_pool[i].is_dirty = 0;
-        g_buffer_pool[i].is_pinned = 1;
-        g_buffer_pool[i].ref_bit = 1;
+        while (!done) {
+            curr_buf = &g_buffer_pool[g_lru_clock_hand];
 
-        return g_buffer_pool + i;
-    }
+            // Happy case : found victim. evict this page.
+            if (!curr_buf->is_pinned && !curr_buf->ref_bit) {
+                pthread_mutex_lock(&curr_buf->page_latch);
+                curr_buf->is_pinned = 1;
+                if (curr_buf->is_dirty) {
+                    file_write_page(curr_buf->table_id, curr_buf->page_number, &curr_buf->frame);
+                }
+                file_read_page(table_id, page_num, &curr_buf->frame);
+                curr_buf->table_id = table_id;
+                curr_buf->page_number = page_num;
+                curr_buf->is_dirty = 0;
+                curr_buf->ref_bit = 1;
 
-
-    /* Perform replacement */
-
-    while (!done) {
-        curr_buf = &g_buffer_pool[g_lru_clock_hand];
-
-        // Happy case : found victim. evict this page.
-        if (!curr_buf->is_pinned && !curr_buf->ref_bit) {
-            ++curr_buf->is_pinned;
-            if (curr_buf->is_dirty) {
-                file_write_page(curr_buf->table_id, curr_buf->page_number, &curr_buf->frame);
+                done = 1;
+                acquired = true;
             }
-            file_read_page(table_id, page_num, &curr_buf->frame);
-            curr_buf->table_id = table_id;
-            curr_buf->page_number = page_num;
-            curr_buf->is_dirty = 0;
-            curr_buf->ref_bit = 1;
+            // Current buffer is referenced in this cycle.
+            else if (!curr_buf->is_pinned && curr_buf->ref_bit) {
+                curr_buf->ref_bit = 0;
+            }
+            // else : current buffer is in use. -> Do nothing.
 
-            done = 1;
+            g_lru_clock_hand = (g_lru_clock_hand + 1) % g_buffer_size;
         }
-        // Current buffer is referenced in this cycle.
-        else if (!curr_buf->is_pinned && curr_buf->ref_bit) {
-            curr_buf->ref_bit = 0;
-        }
-        // else : current buffer is in use. -> Do nothing.
-
-        g_lru_clock_hand = (g_lru_clock_hand + 1) % g_buffer_size;
     }
+    pthread_mutex_unlock(&g_buffer_pool_latch);
 
     return curr_buf;
 }
@@ -191,10 +225,13 @@ buffer_t *buf_get_page(int table_id, pagenum_t page_num) {
  */
 void buf_put_page(buffer_t *buf, char dirty) {
     
+    pthread_mutex_lock(&g_buffer_pool_latch);
     // (buf->is_dirty | dirty) means this is clean
     // only when previous clean and clean in this turn too.
     buf->is_dirty |= dirty;
-    --buf->is_pinned;
+    buf->is_pinned = 0;
+    pthread_mutex_unlock(&buf->page_latch);
+    pthread_mutex_unlock(&g_buffer_pool_latch);
 }
 
 /**
@@ -265,7 +302,7 @@ int buf_shutdown_db(void) {
     }
 
     g_buffer_size = 0;
-    free(g_buffer_pool);
+    delete[] g_buffer_pool;
 
     return 0;
 }

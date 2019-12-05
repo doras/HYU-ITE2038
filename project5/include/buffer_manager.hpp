@@ -1,11 +1,9 @@
 #ifndef __BUFFER_MANAGER_H__
 #define __BUFFER_MANAGER_H__
 
-#include "file_manager.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <pthread.h>
+#include "file_manager.h"
 
 // TYPES.
 
@@ -16,6 +14,8 @@ extern "C" {
  * Contains physical frame and more meta-data.
  * If table_id is negative value, the instance is invalid.
  * For replacement policy, this structure is managed by LRU clock.
+ * 
+ * And for concurrency control, each page has their own latch.
  */
 typedef struct _Buffer{
     page_t frame;
@@ -24,6 +24,7 @@ typedef struct _Buffer{
     char is_dirty;
     char is_pinned;
     char ref_bit;
+    pthread_mutex_t page_latch;
 } buffer_t;
 
 
@@ -34,6 +35,11 @@ typedef struct _Buffer{
  * A buffer array where all buffers are stored.
  */
 extern buffer_t *g_buffer_pool;
+
+/**
+ * Latch for whole buffer pool.
+ */
+extern pthread_mutex_t g_buffer_pool_latch;
 
 /**
  * Store size of buffer pool.
@@ -57,9 +63,5 @@ void buf_put_page(buffer_t *buf, char dirty);
 pagenum_t buf_alloc_page(int table_id);
 void buf_free_page(int table_id, pagenum_t pagenum);
 int buf_shutdown_db(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

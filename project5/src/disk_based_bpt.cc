@@ -34,7 +34,7 @@
  */
 
 
-#include "disk_based_bpt.h"
+#include "disk_based_bpt.hpp"
 
 
 // CONSTANTS.
@@ -250,12 +250,12 @@ static pagenum_t _insert_into_node_after_split(int table_id, pagenum_t root, pag
      * the other half to the new.
      */
 
-    temp_pagenums = malloc((ORDER_OF_INTERNAL + 1) * sizeof(pagenum_t));
+    temp_pagenums = new pagenum_t[ORDER_OF_INTERNAL + 1];
     if (temp_pagenums == NULL) {
         perror("Temporary pagenums array for splitting nodes.");
         exit(1);
     }
-    temp_keys = malloc(ORDER_OF_INTERNAL * sizeof(int64_t));
+    temp_keys = new int64_t[ORDER_OF_INTERNAL];
     if (temp_keys == NULL) {
         perror("Temporary keys array for splitting nodes.");
         exit(1);
@@ -297,8 +297,8 @@ static pagenum_t _insert_into_node_after_split(int table_id, pagenum_t root, pag
     }
     new_node_page->frame.internal_page.num_of_keys = j;
     new_node_page->frame.internal_page.entries[j - 1].pagenum = temp_pagenums[i];
-    free(temp_pagenums);
-    free(temp_keys);
+    delete[] temp_pagenums;
+    delete[] temp_keys;
 
     new_node_page->frame.internal_page.parent_pagenum = old_node_page->frame.internal_page.parent_pagenum;
 
@@ -404,13 +404,13 @@ static pagenum_t _insert_into_leaf_after_split(int table_id, pagenum_t root, pag
     new_leaf_page = buf_get_page(table_id, new_leaf);
     new_leaf_page->frame.leaf_page.is_leaf = 1;
 
-    temp_keys = malloc(ORDER_OF_LEAF * sizeof(int64_t));
+    temp_keys = new int64_t[ORDER_OF_LEAF];
     if (temp_keys == NULL) {
         perror("Temporary keys array.");
         exit(1);
     }
 
-    temp_values = malloc(ORDER_OF_LEAF * 120 * sizeof(char));
+    temp_values = new char[ORDER_OF_LEAF][120];
     if (temp_values == NULL) {
         perror("Temporary keys array.");
         exit(1);
@@ -449,8 +449,8 @@ static pagenum_t _insert_into_leaf_after_split(int table_id, pagenum_t root, pag
     }
     new_leaf_page->frame.leaf_page.num_of_keys = j;
 
-    free(temp_keys);
-    free(temp_values);
+    delete[] temp_keys;
+    delete[] temp_values;
 
     new_leaf_page->frame.leaf_page.right_sibling_pagenum = leaf_page->frame.leaf_page.right_sibling_pagenum;
     leaf_page->frame.leaf_page.right_sibling_pagenum = new_leaf;
@@ -940,7 +940,7 @@ int db_insert(int table_id, int64_t key, char * value) {
     buf_put_page(tmp_page, 0);
 
     // No duplicates.
-    if (db_find(table_id, key, NULL) == 0)
+    if (db_find(table_id, key, NULL, 0) == 0)
         return 1;
     
     /* Case: the tree doesn't exist yet.
@@ -987,33 +987,83 @@ int db_insert(int table_id, int64_t key, char * value) {
  * If found matching ‘key’, store matched ‘value’ string in ret_val and return 0.
  * Otherwise, return non-zero value.
  * Memory allocation for record structure(ret_val) should occur in caller function.
- * If ret_val is NULL, just find whether there is the key or not wi
+ * If ret_val is NULL, just find whether there is the key or not.
+ * 
+ * \param trx_id transaction id indicating owner transaction of this operation.
+ *                 If 0, this operation is not performed by transaction.
+ * 
+ * \return OPERATION_SUCCESS if operation is successfully done 
+ *           and the transaction can continue the next operation.
+ *         OPERATION_ABORTED if operation is failed (e.g., deadlock detected) 
+ *           and the transaction should be aborted. In this case, all aborting task
+ *           must be performed in this function.
+ *         OPERATION_NOTFOUND if there is no key corresponding to given key in table.
+ *           Fail but the trx can continue the next operation.
  */
-int db_find(int table_id, int64_t key, char * ret_val) {
+int db_find(int table_id, int64_t key, char * ret_val, int trx_id) {
     int i;
     pagenum_t leaf, root;
     buffer_t *tmp_page;
 
-    tmp_page = buf_get_page(table_id, 0);
-    root = tmp_page->frame.header_page.root_pagenum;
-    buf_put_page(tmp_page, 0);
+    auto low = std::lower_bound(trx_system_t::table.begin(), trx_system_t::table.end(), trx_id,
+    [](const trx_t *lhs, const int &tid) {
+        return lhs->tid < tid;
+    });
 
-    leaf = _find_leaf(table_id, root, key);
-    if (leaf == 0) return 1;
+    trx_t *trx = *low;
+    while (true) {
+        tmp_page = buf_get_page(table_id, 0);
+        root = tmp_page->frame.header_page.root_pagenum;
+        buf_put_page(tmp_page, 0);
 
-    tmp_page = buf_get_page(table_id, leaf);
-    for (i = 0; i < tmp_page->frame.leaf_page.num_of_keys; ++i) {
-        if (tmp_page->frame.leaf_page.records[i].key == key) break;
+        leaf = _find_leaf(table_id, root, key);
+        if (leaf == 0) return OPERATION_NOTFOUND;
+
+        tmp_page = buf_get_page(table_id, leaf);
+        for (i = 0; i < tmp_page->frame.leaf_page.num_of_keys; ++i) {
+            if (tmp_page->frame.leaf_page.records[i].key == key) break;
+        }
+        if (i == tmp_page->frame.leaf_page.num_of_keys) {
+            buf_put_page(tmp_page, 0);
+            return OPERATION_NOTFOUND;
+        } else {
+            int lock_result = acquire_lock(table_id, leaf, i, lock_mode_t::SHARED, trx);
+
+            if (lock_result == LOCK_SUCCESS) {
+                if (ret_val != NULL)
+                    strncpy(ret_val, tmp_page->frame.leaf_page.records[i].value, 120);
+                buf_put_page(tmp_page, 0);
+                return OPERATION_SUCCESS;
+            } else if (lock_result == LOCK_CONFLICT) {
+                buf_put_page(tmp_page, 0);
+
+                pthread_mutex_lock(&trx->trx_mutex);
+                pthread_cond_wait(&trx->trx_cond, &trx->trx_mutex);
+
+                continue;
+            } else {
+
+            }
+
+
+        }
     }
-    if (i == tmp_page->frame.leaf_page.num_of_keys) {
-        buf_put_page(tmp_page, 0);
-        return 1;
-    } else {
-        if (ret_val != NULL)
-            strncpy(ret_val, tmp_page->frame.leaf_page.records[i].value, 120);
-        buf_put_page(tmp_page, 0);
-        return 0;
-    }
+}
+
+
+/**
+ * Find the matching key and modify the values, where each value (column) never 
+ * exceeds the existing one.
+ * \return OPERATION_SUCCESS if operation is successfully done 
+ *           and the transaction can continue the next operation.
+ *         OPERATION_ABORTED if operation is failed (e.g., deadlock detected) 
+ *           and the transaction should be aborted. In this case, all aborting task
+ *           must be performed in this function.
+ *         OPERATION_NOTFOUND if there is no key corresponding to given key in table.
+ *           Fail but the trx can continue the next operation.
+ */
+int db_update(int table_id, int64_t key, char *values, int trx_id) {
+
 }
 
 
@@ -1033,7 +1083,7 @@ int db_delete(int table_id, int64_t key) {
     /* If there isn't given key in tree,
      * deletion fails and return non-zero value
      */
-    if (db_find(table_id, key, value) != 0) {
+    if (db_find(table_id, key, value, 0) != 0) {
         return 1;
     }
 
