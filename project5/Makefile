@@ -11,8 +11,8 @@ LIBS=lib/
 
 # Include more files if you write another source file.
 # SRCS_FOR_LIB:=$(SRCDIR)bpt.c $(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c
-C_SRCS_FOR_LIB:=$(SRCDIR)disk_based_bpt.c $(SRCDIR)file_manager.c
-CPP_SRCS_FOR_LIB:=$(SRCDIR)lock_manager.cc $(SRCDIR)buffer_manager.cc
+C_SRCS_FOR_LIB:=$(SRCDIR)file_manager.c
+CPP_SRCS_FOR_LIB:=$(SRCDIR)disk_based_bpt.cc $(SRCDIR)lock_manager.cc $(SRCDIR)buffer_manager.cc
 C_OBJS_FOR_LIB:=$(C_SRCS_FOR_LIB:.c=.o)
 CPP_OBJS_FOR_LIB:=$(CPP_SRCS_FOR_LIB:.cc=.o)
 

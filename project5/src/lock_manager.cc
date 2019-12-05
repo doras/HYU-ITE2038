@@ -241,9 +241,9 @@ int acquire_lock(int table_id, pagenum_t page_number
     return LOCK_CONFLICT;
 }
 
-int check_conflict(trx_t *trx) {
+// int check_conflict(trx_t *trx) {
 
-}
+// }
 
 /**
  * 
